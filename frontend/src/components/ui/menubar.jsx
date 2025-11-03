@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils"
 function MenubarMenu({
   ...props
 }) {
-  return <MenubarPrimitive.Menu {...props} />;
+  return <MenubarPrimitive.Mencd u {...props} />;
 }
 
 function MenubarGroup({
