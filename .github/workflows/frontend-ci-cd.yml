@@ -1,0 +1,41 @@
+name: Frontend CI/CD
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'app/frontend/**'
+      - '.github/workflows/frontend-ci-cd.yml'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ./app/frontend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+          cache: 'yarn'
+          cache-dependency-path: app/frontend/yarn.lock
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Build production application
+        run: yarn build
+        env:
+          REACT_APP_BACKEND_URL: ${{ secrets.REACT_APP_BACKEND_URL }} # Use secret for production URL
+
+      - name: Archive production build
+        uses: actions/upload-artifact@v3
+        with:
+          name: frontend-build
+          path: app/frontend/build

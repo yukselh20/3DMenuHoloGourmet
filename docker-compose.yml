@@ -1,0 +1,77 @@
+services:
+  mongo:
+    image: mongo:latest
+    container_name: restaurant-mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - app-network
+
+  redis:
+    image: redis:alpine
+    container_name: restaurant-redis
+    ports:
+      - "6379:6379" # <-- Bu satır önemli
+    networks:
+      - app-network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: restaurant-backend
+    command: uvicorn server:app --host 0.0.0.0 --port 8001 --reload
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./backend:/app/backend
+    env_file:
+      - ./backend/.env
+    depends_on:
+      - mongo
+      - redis
+    networks:
+      - app-network
+
+  photogrammetry-worker:
+    build:
+      context: ./backend
+      dockerfile: photogrammetry-worker/Dockerfile
+    container_name: restaurant-worker
+    command: celery -A celery_app.celery worker --loglevel=info -P solo
+    volumes:
+      - ./backend:/app/backend
+    env_file:
+      - ./backend/.env
+    depends_on:
+      - redis
+      - mongo
+    networks:
+      - app-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: restaurant-frontend
+    command: yarn start
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app/frontend
+      - /app/frontend/node_modules
+    env_file:
+      - ./frontend/.env
+    depends_on:
+      - backend
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  mongo_data:

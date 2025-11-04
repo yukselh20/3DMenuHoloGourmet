@@ -1,70 +1,112 @@
-# Getting Started with Create React App
+# 3D/AR Restaurant Menu Platform - MVP
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+A full-stack web application that enables restaurants to create interactive 3D menus. Restaurant managers upload photos of dishes, and customers scan QR codes to view photorealistic 3D models in their browser.
 
-## Available Scripts
+## Features
 
-In the project directory, you can run:
+### Restaurant Manager Features
+- **User Authentication**: Secure JWT-based registration and login
+- **Menu Item Management**: Create, read, update, and delete menu items
+- **Photo Upload**: Upload .zip files containing multiple photos of dishes (30-50 images)
+- **Automatic Processing**: Photos are processed to generate 3D models (MVP uses mock processing)
+- **Job Monitoring**: Real-time status updates (PENDING → PROCESSING → COMPLETED)
+- **QR Code Generation**: Automatic QR code creation for each menu item
+- **Public URLs**: Shareable links for customer access
 
-### `npm start`
+### Customer Features
+- **3D Model Viewer**: Interactive 3D visualization with touch controls
+- **Rotation & Zoom**: Drag to rotate, pinch to zoom
+- **Dish Information**: View name, description, price, allergens, and portion size
+- **True-to-Scale Display**: Models scaled to real-world dimensions
+- **AR Ready**: Infrastructure for AR viewing (Phase 2)
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+## Technology Stack
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+### Backend
+- **Framework**: FastAPI (Python)
+- **Database**: MongoDB with Motor (async driver)
+- **Authentication**: JWT tokens with bcrypt password hashing
+- **File Storage**: AWS S3 (mock storage for MVP)
+- **Task Queue**: Celery with Redis broker
+- **ORM**: Pydantic models
 
-### `npm test`
+### Frontend
+- **Framework**: React 19
+- **3D Rendering**: react-three-fiber + @react-three/drei (Three.js)
+- **State Management**: Zustand
+- **Styling**: Tailwind CSS + Shadcn UI components
+- **Routing**: React Router v7
+- **QR Codes**: qrcode.react
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+### Processing Pipeline (MVP - Mocked)
+- **Photogrammetry**: Simulated 8-second processing
+- **Output**: Sample .glb model from Khronos glTF repository
+- **Future**: Integration with Meshroom CLI for real 3D reconstruction
 
-### `npm run build`
+## Getting Started
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+This project is fully containerized using Docker. This is the recommended way to run the application for development.
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+### Prerequisites
+- Docker and Docker Compose
+- Node.js 20+ and Yarn (for frontend type-checking/linting locally)
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+### Development Setup with Docker
 
-### `npm run eject`
+1.  **Configure Backend Environment**
+    Create a `.env` file inside `/app/backend/`. You can copy the example below. At a minimum, set your `JWT_SECRET_KEY`.
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+    ```env
+    # /app/backend/.env
+    MONGO_URL="mongodb://mongo:27017"
+    DB_NAME="restaurant_3d_menu"
+    JWT_SECRET_KEY="your-super-secret-key-here"
+    CORS_ORIGINS="*"
+    CELERY_BROKER_URL="redis://redis:6379/0"
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+    # Optional: AWS S3 for real file storage
+    # AWS_ACCESS_KEY_ID="your-key"
+    # AWS_SECRET_ACCESS_KEY="your-secret"
+    # S3_BUCKET_NAME="your-bucket-name"
+    # S3_REGION="us-east-1"
+    ```
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+2.  **Configure Frontend Environment**
+    Create a `.env` file inside `/app/frontend/`. This tells the React app how to communicate with the backend.
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+    ```env
+    # /app/frontend/.env
+    REACT_APP_BACKEND_URL=http://localhost:8001
+    ```
 
-## Learn More
+3.  **Build and Run the Application**
+    From the root directory of the project, run:
+    ```bash
+    docker-compose up --build
+    ```
+    This command will build the images for the frontend and backend services and start all containers.
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+    -   Frontend will be available at `http://localhost:3000`
+    -   Backend API will be available at `http://localhost:8001`
+    -   Backend API docs will be at `http://localhost:8001/docs`
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+## API Endpoints
 
-### Code Splitting
+### Authentication
+- `POST /api/auth/register` - Register new user
+- `POST /api/auth/login` - Login user
+- `GET /api/auth/me` - Get current user (protected)
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
+### Menu Items (Protected)
+- `POST /api/menu-items` - Create menu item
+- `GET /api/menu-items` - List user's menu items
+- `GET /api/menu-items/{id}` - Get single menu item
+- `PUT /api/menu-items/{id}` - Update menu item
+- `DELETE /api/menu-items/{id}` - Delete menu item
+- `POST /api/menu-items/{id}/upload-images` - Upload photos (.zip)
 
-### Analyzing the Bundle Size
+### Jobs (Protected)
+- `GET /api/jobs/{item_id}` - Get processing job status
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
-
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+### Public
+- `GET /api/public/menu-item/{id}` - Get menu item for public viewing

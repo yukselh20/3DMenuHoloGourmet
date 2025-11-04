@@ -12,60 +12,57 @@ import uuid
 from datetime import datetime, timezone, timedelta
 from passlib.context import CryptContext
 from jose import JWTError, jwt
-import boto3
 from botocore.exceptions import ClientError
 import io
 import zipfile
-import asyncio
 
+# Import S3 utility and the new Celery task
+from s3_utils import upload_file_obj_to_s3
+from tasks import process_photogrammetry_job
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
+
 
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
+
 # JWT Configuration
 SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'your-secret-key-change-in-production')
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7 # 7 days
+
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# S3 Configuration
-AWS_ACCESS_KEY_ID = os.environ.get('AWS_ACCESS_KEY_ID')
-AWS_SECRET_ACCESS_KEY = os.environ.get('AWS_SECRET_ACCESS_KEY')
-S3_BUCKET_NAME = os.environ.get('S3_BUCKET_NAME')
-S3_REGION = os.environ.get('S3_REGION', 'us-east-1')
-
-# Initialize S3 client (will be None if credentials not provided)
-s3_client = None
-if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and S3_BUCKET_NAME:
-    s3_client = boto3.client(
-        's3',
-        aws_access_key_id=AWS_ACCESS_KEY_ID,
-        aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
-        region_name=S3_REGION
-    )
 
 # Create the main app
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
 security = HTTPBearer()
 
+
 # Models
+class Organization(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
 class User(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     email: EmailStr
+    organization_id: str # Foreign key to Organization
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class UserCreate(BaseModel):
     email: EmailStr
     password: str
+    organization_name: str # New field for registration
 
 class UserLogin(BaseModel):
     email: EmailStr
@@ -82,9 +79,10 @@ class MenuItem(BaseModel):
     description: str
     price: float
     allergens: Optional[List[str]] = None
-    dimensions_cm: dict  # {"diameter": 28, "height": 10}
+    dimensions_cm: dict # {"diameter": 28, "height": 10}
     model_url: Optional[str] = None
     owner_id: str
+    organization_id: str # Foreign key to Organization
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class MenuItemCreate(BaseModel):
@@ -105,11 +103,13 @@ class PhotogrammetryJob(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     menu_item_id: str
-    status: str  # PENDING, PROCESSING, COMPLETED, FAILED
+    organization_id: str # Foreign key to Organization
+    status: str # PENDING, PROCESSING, COMPLETED, FAILED
     raw_images_zip_url: Optional[str] = None
     error_message: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     completed_at: Optional[datetime] = None
+
 
 # Helper functions
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -142,114 +142,53 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
             raise credentials_exception
     except JWTError:
         raise credentials_exception
-    
+
     user = await db.users.find_one({"id": user_id}, {"_id": 0})
     if user is None:
         raise credentials_exception
-    
-    # Convert ISO string to datetime if needed
+
     if isinstance(user.get('created_at'), str):
         user['created_at'] = datetime.fromisoformat(user['created_at'])
-    
+
     return User(**user)
 
-def upload_to_s3(file_content: bytes, key: str, content_type: str = 'application/zip') -> str:
-    """Upload file to S3 and return the URL"""
-    if not s3_client:
-        # Mock S3 upload for local development
-        return f"https://{S3_BUCKET_NAME}.s3.{S3_REGION}.amazonaws.com/{key}"
-    
-    try:
-        s3_client.put_object(
-            Bucket=S3_BUCKET_NAME,
-            Key=key,
-            Body=file_content,
-            ContentType=content_type
-        )
-        return f"https://{S3_BUCKET_NAME}.s3.{S3_REGION}.amazonaws.com/{key}"
-    except ClientError as e:
-        logging.error(f"Error uploading to S3: {e}")
-        raise HTTPException(status_code=500, detail="Failed to upload file")
-
-async def process_photogrammetry_job(job_id: str, menu_item_id: str):
-    """Mock photogrammetry processing - simulates the Meshroom pipeline"""
-    try:
-        # Update job status to PROCESSING
-        await db.photogrammetry_jobs.update_one(
-            {"id": job_id},
-            {"$set": {"status": "PROCESSING"}}
-        )
-        
-        # Simulate processing time (5-10 seconds)
-        await asyncio.sleep(8)
-        
-        # Use a sample GLB model URL (this would be the converted output in production)
-        # For MVP, we're using a publicly available sample model
-        sample_model_url = "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Duck/glTF-Binary/Duck.glb"
-        
-        # Update menu item with model URL
-        await db.menu_items.update_one(
-            {"id": menu_item_id},
-            {"$set": {"model_url": sample_model_url}}
-        )
-        
-        # Update job status to COMPLETED
-        await db.photogrammetry_jobs.update_one(
-            {"id": job_id},
-            {"$set": {
-                "status": "COMPLETED",
-                "completed_at": datetime.now(timezone.utc).isoformat()
-            }}
-        )
-        
-    except Exception as e:
-        # Update job status to FAILED
-        await db.photogrammetry_jobs.update_one(
-            {"id": job_id},
-            {"$set": {
-                "status": "FAILED",
-                "error_message": str(e),
-                "completed_at": datetime.now(timezone.utc).isoformat()
-            }}
-        )
 
 # Auth Routes
 @api_router.post("/auth/register", response_model=Token)
 async def register(user_create: UserCreate):
-    # Check if user already exists
     existing_user = await db.users.find_one({"email": user_create.email})
     if existing_user:
         raise HTTPException(status_code=400, detail="Email already registered")
-    
-    # Create new user
+
+    organization = Organization(name=user_create.organization_name)
+    org_doc = organization.model_dump()
+    org_doc['created_at'] = org_doc['created_at'].isoformat()
+    await db.organizations.insert_one(org_doc)
+
     user = User(
-        email=user_create.email
+        email=user_create.email,
+        organization_id=organization.id
     )
-    
-    # Store user with hashed password
+
     user_doc = user.model_dump()
     user_doc['created_at'] = user_doc['created_at'].isoformat()
     user_doc['hashed_password'] = get_password_hash(user_create.password)
-    
+
     await db.users.insert_one(user_doc)
-    
-    # Create access token
-    access_token = create_access_token(data={"sub": user.id})
+
+    access_token = create_access_token(data={"sub": user.id, "org_id": user.organization_id})
     return Token(access_token=access_token, token_type="bearer")
 
 @api_router.post("/auth/login", response_model=Token)
 async def login(user_login: UserLogin):
-    # Find user
     user_doc = await db.users.find_one({"email": user_login.email}, {"_id": 0})
     if not user_doc:
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    
-    # Verify password
+
     if not verify_password(user_login.password, user_doc.get('hashed_password', '')):
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    
-    # Create access token
-    access_token = create_access_token(data={"sub": user_doc['id']})
+
+    access_token = create_access_token(data={"sub": user_doc['id'], "org_id": user_doc['organization_id']})
     return Token(access_token=access_token, token_type="bearer")
 
 @api_router.get("/auth/me", response_model=User)
@@ -259,159 +198,167 @@ async def get_me(current_user: User = Depends(get_current_user)):
 # Menu Item Routes
 @api_router.post("/menu-items", response_model=MenuItem)
 async def create_menu_item(
-    menu_item: MenuItemCreate,
-    current_user: User = Depends(get_current_user)
+        menu_item: MenuItemCreate,
+        current_user: User = Depends(get_current_user)
 ):
     item = MenuItem(
         **menu_item.model_dump(),
-        owner_id=current_user.id
+        owner_id=current_user.id,
+        organization_id=current_user.organization_id
     )
-    
+
     item_doc = item.model_dump()
     item_doc['created_at'] = item_doc['created_at'].isoformat()
-    
+
     await db.menu_items.insert_one(item_doc)
     return item
 
 @api_router.get("/menu-items", response_model=List[MenuItem])
 async def get_menu_items(current_user: User = Depends(get_current_user)):
-    items = await db.menu_items.find({"owner_id": current_user.id}, {"_id": 0}).to_list(1000)
-    
+    items = await db.menu_items.find(
+        {"organization_id": current_user.organization_id},
+        {"_id": 0}
+    ).to_list(1000)
+
     for item in items:
         if isinstance(item.get('created_at'), str):
             item['created_at'] = datetime.fromisoformat(item['created_at'])
-    
+
     return items
 
 @api_router.get("/menu-items/{item_id}", response_model=MenuItem)
 async def get_menu_item(
-    item_id: str,
-    current_user: User = Depends(get_current_user)
+        item_id: str,
+        current_user: User = Depends(get_current_user)
 ):
     item = await db.menu_items.find_one(
-        {"id": item_id, "owner_id": current_user.id},
+        {"id": item_id, "organization_id": current_user.organization_id},
         {"_id": 0}
     )
-    
+
     if not item:
         raise HTTPException(status_code=404, detail="Menu item not found")
-    
+
     if isinstance(item.get('created_at'), str):
         item['created_at'] = datetime.fromisoformat(item['created_at'])
-    
+
     return MenuItem(**item)
 
 @api_router.put("/menu-items/{item_id}", response_model=MenuItem)
 async def update_menu_item(
-    item_id: str,
-    menu_item_update: MenuItemUpdate,
-    current_user: User = Depends(get_current_user)
+        item_id: str,
+        menu_item_update: MenuItemUpdate,
+        current_user: User = Depends(get_current_user)
 ):
-    # Check if item exists and belongs to user
     existing_item = await db.menu_items.find_one(
-        {"id": item_id, "owner_id": current_user.id}
+        {"id": item_id, "organization_id": current_user.organization_id}
     )
-    
+
     if not existing_item:
         raise HTTPException(status_code=404, detail="Menu item not found")
-    
-    # Update only provided fields
+
     update_data = {k: v for k, v in menu_item_update.model_dump().items() if v is not None}
-    
+
     if update_data:
         await db.menu_items.update_one(
             {"id": item_id},
             {"$set": update_data}
         )
-    
-    # Fetch and return updated item
-    updated_item = await db.menu_items.find_one({"id": item_id}, {"_id": 0})
-    
+
+    updated_item = await db.menu_items.find_one(
+        {"id": item_id, "organization_id": current_user.organization_id},
+        {"_id": 0}
+    )
+
     if isinstance(updated_item.get('created_at'), str):
         updated_item['created_at'] = datetime.fromisoformat(updated_item['created_at'])
-    
+
     return MenuItem(**updated_item)
 
 @api_router.delete("/menu-items/{item_id}")
 async def delete_menu_item(
-    item_id: str,
-    current_user: User = Depends(get_current_user)
+        item_id: str,
+        current_user: User = Depends(get_current_user)
 ):
-    # Check if item exists and belongs to user
     existing_item = await db.menu_items.find_one(
-        {"id": item_id, "owner_id": current_user.id}
+        {"id": item_id, "organization_id": current_user.organization_id}
     )
-    
+
     if not existing_item:
         raise HTTPException(status_code=404, detail="Menu item not found")
-    
-    # Delete associated jobs
-    await db.photogrammetry_jobs.delete_many({"menu_item_id": item_id})
-    
-    # Delete menu item
-    await db.menu_items.delete_one({"id": item_id})
-    
+
+    await db.photogrammetry_jobs.delete_many(
+        {"menu_item_id": item_id, "organization_id": current_user.organization_id}
+    )
+
+    await db.menu_items.delete_one(
+        {"id": item_id, "organization_id": current_user.organization_id}
+    )
+
     return {"message": "Menu item deleted successfully"}
 
 @api_router.post("/menu-items/{item_id}/upload-images")
 async def upload_images(
-    item_id: str,
-    file: UploadFile = File(...),
-    current_user: User = Depends(get_current_user)
+        item_id: str,
+        file: UploadFile = File(...),
+        current_user: User = Depends(get_current_user)
 ):
-    # Check if item exists and belongs to user
     existing_item = await db.menu_items.find_one(
-        {"id": item_id, "owner_id": current_user.id}
+        {"id": item_id, "organization_id": current_user.organization_id}
     )
-    
+
     if not existing_item:
         raise HTTPException(status_code=404, detail="Menu item not found")
-    
-    # Validate file is a zip
+
     if not file.filename.endswith('.zip'):
         raise HTTPException(status_code=400, detail="File must be a zip archive")
-    
-    # Read file content
+
+    # Read the entire file into memory for robust validation.
     file_content = await file.read()
-    
-    # Validate it's a valid zip file
+
+    # Create an in-memory binary stream (file-like object) from the content.
+    file_buffer = io.BytesIO(file_content)
+
     try:
-        with zipfile.ZipFile(io.BytesIO(file_content)) as zip_file:
-            # Check if zip contains image files
+        # Validate the entire in-memory file.
+        with zipfile.ZipFile(file_buffer, 'r') as zip_file:
             image_extensions = ('.jpg', '.jpeg', '.png', '.JPG', '.JPEG', '.PNG')
             image_files = [f for f in zip_file.namelist() if f.lower().endswith(image_extensions)]
-            
-            if len(image_files) < 5:
+
+            if len(image_files) < 1:
                 raise HTTPException(
                     status_code=400,
-                    detail="Zip file must contain at least 5 images"
+                    detail="Zip file must contain at least one image file."
                 )
     except zipfile.BadZipFile:
         raise HTTPException(status_code=400, detail="Invalid zip file")
-    
-    # Create job ID
+
+    # IMPORTANT: Reset the buffer's pointer to the beginning for the S3 upload.
+    file_buffer.seek(0)
+
     job_id = str(uuid.uuid4())
-    
-    # Upload to S3
-    s3_key = f"raw-zips/{job_id}.zip"
-    zip_url = upload_to_s3(file_content, s3_key, 'application/zip')
-    
-    # Create photogrammetry job
+    s3_key = f"raw-uploads/{job_id}.zip"
+    try:
+        # Upload the in-memory buffer to S3.
+        zip_url = upload_file_obj_to_s3(file_buffer, s3_key, 'application/zip')
+    except ClientError:
+        raise HTTPException(status_code=500, detail="Failed to upload file to S3")
+
     job = PhotogrammetryJob(
         id=job_id,
         menu_item_id=item_id,
+        organization_id=current_user.organization_id,
         status="PENDING",
         raw_images_zip_url=zip_url
     )
-    
+
     job_doc = job.model_dump()
     job_doc['created_at'] = job_doc['created_at'].isoformat()
-    
+
     await db.photogrammetry_jobs.insert_one(job_doc)
-    
-    # Start background task to process photogrammetry
-    asyncio.create_task(process_photogrammetry_job(job_id, item_id))
-    
+
+    process_photogrammetry_job.delay(job_id, item_id)
+
     return {
         "message": "Upload successful",
         "job_id": job_id,
@@ -421,46 +368,43 @@ async def upload_images(
 # Job Status Routes
 @api_router.get("/jobs/{item_id}")
 async def get_job_status(
-    item_id: str,
-    current_user: User = Depends(get_current_user)
+        item_id: str,
+        current_user: User = Depends(get_current_user)
 ):
-    # Check if item belongs to user
     existing_item = await db.menu_items.find_one(
-        {"id": item_id, "owner_id": current_user.id}
+        {"id": item_id, "organization_id": current_user.organization_id}
     )
-    
+
     if not existing_item:
         raise HTTPException(status_code=404, detail="Menu item not found")
-    
-    # Get latest job for this item
+
     job = await db.photogrammetry_jobs.find_one(
-        {"menu_item_id": item_id},
+        {"menu_item_id": item_id, "organization_id": current_user.organization_id},
         {"_id": 0},
         sort=[("created_at", -1)]
     )
-    
+
     if not job:
         return {"status": "NO_JOB", "message": "No processing job found"}
-    
-    # Convert dates if needed
+
     if isinstance(job.get('created_at'), str):
         job['created_at'] = datetime.fromisoformat(job['created_at'])
-    if job.get('completed_at') and isinstance(job['completed_at'], str):
+    if job.get('completed_at') and isinstance(job.get('completed_at'), str):
         job['completed_at'] = datetime.fromisoformat(job['completed_at'])
-    
+
     return PhotogrammetryJob(**job)
 
 # Public Routes
 @api_router.get("/public/menu-item/{item_id}")
 async def get_public_menu_item(item_id: str):
-    item = await db.menu_items.find_one({"id": item_id}, {"_id": 0, "owner_id": 0})
-    
+    item = await db.menu_items.find_one({"id": item_id}, {"_id": 0, "owner_id": 0, "organization_id": 0})
+
     if not item:
         raise HTTPException(status_code=404, detail="Menu item not found")
-    
+
     if isinstance(item.get('created_at'), str):
         item['created_at'] = datetime.fromisoformat(item['created_at'])
-    
+
     return item
 
 @api_router.get("/")
