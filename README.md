@@ -1,308 +1,159 @@
-# 3D/AR Restaurant Menu Platform - MVP
+# 3D/AR Restaurant Menu Platform
 
-A full-stack web application that enables restaurants to create interactive 3D menus. Restaurant managers upload photos of dishes, and customers scan QR codes to view photorealistic 3D models in their browser.
+A full-stack web application that enables restaurants to create interactive, true-to-scale 3D/AR menus. Restaurant managers upload photos of dishes, and the system automatically generates photorealistic 3D models. Customers can then scan a QR code to view these models in their browser, rotate them, zoom in, and even place them on their table using Augmented Reality.
 
-## 🎯 Features
+This project has evolved from a simple proof-of-concept to a scalable, multi-tenant platform with a real, asynchronous 3D processing pipeline.
 
-### Restaurant Manager Features
-- **User Authentication**: Secure JWT-based registration and login
-- **Menu Item Management**: Create, read, update, and delete menu items
-- **Photo Upload**: Upload .zip files containing multiple photos of dishes (30-50 images)
-- **Automatic Processing**: Photos are processed to generate 3D models (MVP uses mock processing)
-- **Job Monitoring**: Real-time status updates (PENDING → PROCESSING → COMPLETED)
-- **QR Code Generation**: Automatic QR code creation for each menu item
-- **Public URLs**: Shareable links for customer access
+![Demo Gif Placeholder - A short gif showing the app in action would go here]
 
-### Customer Features
-- **3D Model Viewer**: Interactive 3D visualization with touch controls
-- **Rotation & Zoom**: Drag to rotate, pinch to zoom
-- **Dish Information**: View name, description, price, allergens, and portion size
-- **True-to-Scale Display**: Models scaled to real-world dimensions
-- **AR Ready**: Infrastructure for AR viewing (Phase 2)
+## Key Features
 
-## 🏗️ Technology Stack
+### For Restaurant Managers (Admin Dashboard)
+*   **Multi-Tenant Architecture**: Secure registration for multiple restaurants, with each restaurant's data completely isolated.
+*   **Menu Management**: Full CRUD (Create, Read, Update, Delete) functionality for menu items.
+*   **Automated 3D Model Generation**: Simply upload a `.zip` file containing photos of a dish. The system handles the rest.
+*   **Asynchronous Processing**: Photogrammetry jobs are processed in the background, allowing managers to continue working without waiting.
+*   **Real-time Job Monitoring**: See the status of your 3D model generation in real-time (`PENDING` -> `PROCESSING` -> `COMPLETED`/`FAILED`).
+*   **Interactive 3D Preview**: Once a model is successfully generated, an interactive 3D preview is shown directly on the admin dashboard.
+*   **QR Code & Public URL Generation**: A unique QR code and shareable URL are automatically created for each completed menu item.
 
-### Backend
-- **Framework**: FastAPI (Python)
-- **Database**: MongoDB with Motor (async driver)
-- **Authentication**: JWT tokens with bcrypt password hashing
-- **File Storage**: AWS S3 (mock storage for MVP)
-- **ORM**: Pydantic models
-
-### Frontend
-- **Framework**: React 19
-- **3D Rendering**: react-three-fiber + @react-three/drei (Three.js)
-- **State Management**: Zustand
-- **Styling**: Tailwind CSS + Shadcn UI components
-- **Routing**: React Router v7
-- **QR Codes**: qrcode.react
-
-### Processing Pipeline (MVP - Mocked)
-- **Photogrammetry**: Simulated 8-second processing
-- **Output**: Sample .glb model from Khronos glTF repository
-- **Future**: Integration with Meshroom CLI for real 3D reconstruction
-
-## 📁 Project Structure
-
-```
-/app/
-├── backend/
-│   ├── server.py           # FastAPI application
-│   ├── .env               # Environment variables
-│   └── requirements.txt    # Python dependencies
-│
-├── frontend/
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── Auth.jsx              # Login/Register
-│   │   │   ├── AdminDashboard.jsx    # Manager dashboard
-│   │   │   ├── PublicMenuView.jsx    # Customer view
-│   │   │   ├── ModelViewer.jsx       # 3D renderer
-│   │   │   └── ui/                   # Shadcn components
-│   │   ├── store/
-│   │   │   └── authStore.js          # Auth state management
-│   │   ├── App.js
-│   │   └── index.js
-│   ├── package.json
-│   └── .env               # Frontend environment
-│
-└── README.md
-```
-
-## 🚀 Getting Started
-
-### Prerequisites
-- Node.js 20+ and Yarn
-- Python 3.10+
-- MongoDB
-
-### Backend Setup
-
-1. **Install dependencies**:
-```bash
-cd /app/backend
-pip install -r requirements.txt
-```
-
-2. **Configure environment** (`.env`):
-```env
-MONGO_URL="mongodb://localhost:27017"
-DB_NAME="restaurant_3d_menu"
-JWT_SECRET_KEY="your-secret-key-here"
-CORS_ORIGINS="*"
-
-# Optional: S3 Configuration
-# AWS_ACCESS_KEY_ID="your-key"
-# AWS_SECRET_ACCESS_KEY="your-secret"
-# S3_BUCKET_NAME="your-bucket"
-# S3_REGION="us-east-1"
-```
-
-3. **Run the server**:
-```bash
-uvicorn server:app --host 0.0.0.0 --port 8001 --reload
-```
-
-### Frontend Setup
-
-1. **Install dependencies**:
-```bash
-cd /app/frontend
-yarn install --ignore-engines
-```
-
-2. **Configure environment** (`.env`):
-```env
-REACT_APP_BACKEND_URL=https://your-domain.com
-```
-
-3. **Start development server**:
-```bash
-yarn start
-```
-
-## 📡 API Endpoints
-
-### Authentication
-- `POST /api/auth/register` - Register new user
-- `POST /api/auth/login` - Login user
-- `GET /api/auth/me` - Get current user (protected)
-
-### Menu Items (Protected)
-- `POST /api/menu-items` - Create menu item
-- `GET /api/menu-items` - List user's menu items
-- `GET /api/menu-items/{id}` - Get single menu item
-- `PUT /api/menu-items/{id}` - Update menu item
-- `DELETE /api/menu-items/{id}` - Delete menu item
-- `POST /api/menu-items/{id}/upload-images` - Upload photos (.zip)
-
-### Jobs (Protected)
-- `GET /api/jobs/{item_id}` - Get processing job status
-
-### Public
-- `GET /api/public/menu-item/{id}` - Get menu item for public viewing
-
-## 🧪 Testing
-
-### Quick Test Flow
-
-```bash
-# 1. Register user
-curl -X POST "$API_URL/auth/register" \
-  -H "Content-Type: application/json" \
-  -d '{"email":"test@restaurant.com","password":"test123"}'
-
-# 2. Create menu item
-curl -X POST "$API_URL/menu-items" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Grilled Salmon",
-    "description": "Fresh Atlantic salmon",
-    "price": 24.99,
-    "allergens": ["fish"],
-    "dimensions_cm": {"diameter": 28, "height": 10}
-  }'
-
-# 3. Upload photos
-curl -X POST "$API_URL/menu-items/{ITEM_ID}/upload-images" \
-  -H "Authorization: Bearer $TOKEN" \
-  -F "file=@photos.zip"
-
-# 4. Check job status
-curl -X GET "$API_URL/jobs/{ITEM_ID}" \
-  -H "Authorization: Bearer $TOKEN"
-
-# 5. View public page
-# Visit: https://your-domain.com/view/{ITEM_ID}
-```
-
-## 🎨 Design Features
-
-- **Modern UI**: Clean, professional interface with Tailwind CSS
-- **Gradient Backgrounds**: Subtle blue-slate gradients
-- **Glass Morphism**: Backdrop blur effects for depth
-- **Responsive Design**: Mobile-first approach
-- **Interactive 3D**: Smooth controls with OrbitControls
-- **Loading States**: Skeleton screens and spinners
-- **Toast Notifications**: Real-time feedback with Sonner
-
-## 📦 Database Schema
-
-### Users Collection
-```javascript
-{
-  id: "uuid",
-  email: "user@example.com",
-  hashed_password: "bcrypt_hash",
-  created_at: "ISO datetime"
-}
-```
-
-### Menu Items Collection
-```javascript
-{
-  id: "uuid",
-  name: "Dish Name",
-  description: "Description",
-  price: 24.99,
-  allergens: ["gluten", "dairy"],
-  dimensions_cm: {diameter: 28, height: 10},
-  model_url: "s3://bucket/models/item.glb",
-  owner_id: "user_uuid",
-  created_at: "ISO datetime"
-}
-```
-
-### Photogrammetry Jobs Collection
-```javascript
-{
-  id: "uuid",
-  menu_item_id: "item_uuid",
-  status: "COMPLETED",  // PENDING, PROCESSING, COMPLETED, FAILED
-  raw_images_zip_url: "s3://bucket/raw-zips/job.zip",
-  error_message: null,
-  created_at: "ISO datetime",
-  completed_at: "ISO datetime"
-}
-```
-
-## 🔒 Security
-
-- JWT tokens with secure secret keys
-- Bcrypt password hashing
-- CORS protection
-- Input validation with Pydantic
-- File type validation (.zip only)
-- Minimum image requirements (5+ images per upload)
-
-## 🚧 MVP Limitations & Future Enhancements
-
-### Current MVP Limitations
-- **Mock Photogrammetry**: Uses sample model instead of real 3D reconstruction
-- **Mock S3 Storage**: Local development uses mock URLs
-- **No AR**: AR button present but not functional (requires WebXR Phase 2)
-- **Sample Model**: All items use the same Duck.glb model
-
-### Phase 2 Enhancements
-1. **Real Photogrammetry**:
-   - Meshroom CLI integration
-   - GPU-accelerated processing
-   - Celery worker queue
-   - gltf-pipeline optimization
-
-2. **AR Features**:
-   - WebXR implementation
-   - Device camera integration
-   - True-to-scale placement
-   - Surface detection
-
-3. **Additional Features**:
-   - Multiple 3D model formats
-   - Model preview in admin
-   - Batch processing
-   - Analytics dashboard
-   - Custom QR code designs
-   - Menu categories
-   - Restaurant branding
-
-## 🐛 Known Issues
-
-- First load may be slow due to 3D model download
-- AR detection not implemented (Phase 2)
-- No model caching (future optimization)
-
-## 📝 Environment Variables
-
-### Backend (.env)
-```env
-MONGO_URL=mongodb://localhost:27017
-DB_NAME=restaurant_3d_menu
-JWT_SECRET_KEY=your-secret-key
-CORS_ORIGINS=*
-AWS_ACCESS_KEY_ID=optional
-AWS_SECRET_ACCESS_KEY=optional
-S3_BUCKET_NAME=optional
-S3_REGION=us-east-1
-```
-
-### Frontend (.env)
-```env
-REACT_APP_BACKEND_URL=https://your-api-domain.com
-```
-
-## 📄 License
-
-MIT License - Feel free to use this project for your restaurant!
-
-## 🤝 Contributing
-
-Contributions welcome! Please follow standard PR practices.
-
-## 📞 Support
-
-For issues or questions, please open a GitHub issue.
+### For Customers (Public View)
+*   **Interactive 3D Viewer**: A high-performance viewer with smooth touch controls for rotation and zooming.
+*   **True-to-Scale AR Mode**: Place a life-sized virtual model of the dish on your own table using WebXR to see its exact portion size and presentation before ordering.
+*   **Detailed Information**: View the dish's name, description, price, allergens, and dimensions.
+*   **Optimized Experience**: Features a progress indicator for loading large 3D models.
 
 ---
 
-**Built with ❤️ for the future of dining experiences**
+## Technology Stack
+
+The platform is built on a modern, scalable, and containerized architecture.
+
+| Component                 | Technology                                                                                                  | Description                                                                     |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| **Backend Framework**     | **FastAPI (Python)**                                                                                        | High-performance, asynchronous API development.                                 |
+| **Database**              | **MongoDB** with **Motor**                                                                                  | Asynchronous, NoSQL database for flexible data storage.                         |
+| **Task Queue**            | **Celery** with **Redis**                                                                                   | Manages the long-running photogrammetry tasks asynchronously.                   |
+| **Photogrammetry Engine** | **Meshroom CLI**                                                                                            | Core open-source software for generating 3D models from photos.                 |
+| **3D Model Optimization** | **gltf-pipeline**                                                                                           | Converts and optimizes models to the web-ready `.glb` format with Draco compression. |
+| **File Storage**          | **AWS S3**                                                                                                  | Scalable, reliable storage for uploaded images and generated 3D models.         |
+| **Frontend Framework**    | **React**                                                                                                   | Building the user interface for both the admin dashboard and public views.      |
+| **3D Rendering**          | **React Three Fiber** & **Drei**                                                                            | Powerful libraries for creating and interacting with 3D scenes in React.        |
+| **Augmented Reality**     | **React Three XR**                                                                                          | Enables the immersive WebXR-based Augmented Reality experience.                 |
+| **UI / Styling**          | **Tailwind CSS** & **Shadcn UI**                                                                            | A modern utility-first CSS framework and a set of beautifully designed components. |
+| **Containerization**      | **Docker** & **Docker Compose**                                                                             | Ensures a consistent and reproducible development and deployment environment.   |
+
+---
+
+## Getting Started
+
+The entire application stack is containerized, making the setup process straightforward.
+
+### Prerequisites
+
+*   **Docker & Docker Compose**: Install [Docker Desktop](https://www.docker.com/products/docker-desktop/).
+*   **An AWS Account**: Required for file storage. You will need an S3 bucket and IAM credentials. The AWS Free Tier is more than sufficient for development.
+
+### Setup Instructions
+
+1.  **Clone the Repository**
+    ```bash
+    git clone <your-repository-url>
+    cd <your-repository-name>
+    ```
+
+2.  **Configure Backend Environment**
+    Create a file named `.env` inside the `backend/` directory and populate it with your credentials.
+
+    **File:** `backend/.env`
+    ```env
+    # MongoDB Configuration (uses the service name 'mongo' from docker-compose)
+    MONGO_URL="mongodb://mongo:27017"
+    DB_NAME="restaurant_3d_menu"
+
+    # JWT Configuration - IMPORTANT: Change this to a long, random, secret string!
+    JWT_SECRET_KEY="a-very-strong-and-secret-key-that-you-must-change"
+
+    # CORS Configuration
+    CORS_ORIGINS="*"
+
+    # Celery Configuration (uses the service name 'redis' from docker-compose)
+    CELERY_BROKER_URL="redis://redis:6379/0"
+
+    # Backend URL for generating public links
+    BACKEND_BASE_URL="http://localhost:8001"
+    
+    # Sentry DSN for error monitoring (optional)
+    SENTRY_DSN=""
+
+    # AWS S3 Configuration - IMPORTANT: FILL THESE OUT
+    AWS_ACCESS_KEY_ID="YOUR_AWS_ACCESS_KEY_ID"
+    AWS_SECRET_ACCESS_KEY="YOUR_AWS_SECRET_ACCESS_KEY"
+    S3_BUCKET_NAME="your-s3-bucket-name"
+    S3_REGION="your-bucket-region" # e.g., us-east-1
+    ```
+
+3.  **Configure Frontend Environment**
+    Create a file named `.env` inside the `frontend/` directory.
+
+    **File:** `frontend/.env`
+    ```env
+    # This URL tells the React app where to find the backend API.
+    REACT_APP_BACKEND_URL=http://localhost:8001
+
+    # Sentry DSN for error monitoring (optional)
+    REACT_APP_SENTRY_DSN=""
+    ```
+
+4.  **Build and Run the Application**
+    From the **root directory** of the project, run the following command:
+    ```bash
+    docker-compose up --build
+    ```
+    The first build will take several minutes as it needs to download Meshroom and install all dependencies. Subsequent builds will be much faster.
+
+5.  **Access the Services**
+    *   **Frontend Application**: [http://localhost:3000](http://localhost:3000)
+    *   **Backend API Docs**: [http://localhost:8001/docs](http://localhost:8001/docs)
+
+---
+
+## How to Test the Full Workflow
+
+1.  **Register:** Go to `http://localhost:3000`, switch to the "Register" tab, and create a new restaurant account.
+2.  **Create Item:** On the dashboard, click "Create Menu Item" and fill out the form.
+3.  **Prepare Photos:** Create a `.zip` archive containing at least 5 photos (`.jpg`, `.png`) of an object, taken from multiple angles.
+4.  **Upload Photos:** On the newly created menu item card, select your `.zip` file and click the upload button.
+5.  **Monitor Processing:** The status badge will change from `PENDING` to `PROCESSING`. You can monitor the detailed progress in your terminal by watching the logs from the `restaurant-worker` container. This step can take several minutes.
+6.  **View Result:** Once the status changes to `COMPLETED`, the card will refresh to show an interactive 3D preview of your generated model.
+7.  **Test AR:** Click "View Public" to open the customer-facing page. On a compatible mobile device, you can test the "View on Your Table (AR)" functionality.
+
+---
+
+## API Endpoints
+
+All protected endpoints require a `Bearer <token>` in the `Authorization` header.
+
+### Authentication
+
+*   `POST /api/auth/register`: Register a new organization and user.
+*   `POST /api/auth/login`: Log in and receive a JWT.
+*   `GET /api/auth/me`: Get the current authenticated user's details.
+
+### Menu Items (Protected)
+
+*   `POST /api/menu-items`: Create a new menu item.
+*   `GET /api/menu-items`: List all menu items for the user's organization.
+*   `GET /api/menu-items/{item_id}`: Get a single menu item.
+*   `PUT /api/menu-items/{item_id}`: Update a menu item.
+*   `DELETE /api/menu-items/{item_id}`: Delete a menu item.
+*   `POST /api/menu-items/{item_id}/upload-images`: Upload a `.zip` file of photos to start a processing job.
+
+### Jobs (Protected)
+
+*   `GET /api/jobs/{item_id}`: Get the latest processing job status for a menu item.
+
+### Public
+
+*   `GET /api/public/menu-item/{item_id}`: Get the public details of a menu item (unauthenticated).
+*   `/storage/processed-models/{item_id}.glb`: Endpoint to serve the static 3D model files.
