@@ -290,19 +290,3 @@ S3_REGION=us-east-1
 ```env
 REACT_APP_BACKEND_URL=https://your-api-domain.com
 ```
-
-## 📄 License
-
-MIT License - Feel free to use this project for your restaurant!
-
-## 🤝 Contributing
-
-Contributions welcome! Please follow standard PR practices.
-
-## 📞 Support
-
-For issues or questions, please open a GitHub issue.
-
----
-
-**Built with ❤️ for the future of dining experiences**
